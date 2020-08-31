@@ -153,9 +153,9 @@ def worker(rank, world_size, args):
         acc1, acc5 = F.accuracy(logits, label, (1, 5))
         optimizer.backward(loss)  # compute gradients
         if dist.is_distributed():  # all_reduce_mean
-            loss = dist.all_reduce_sum(loss, "train_loss") / dist.get_world_size()
-            acc1 = dist.all_reduce_sum(acc1, "train_acc1") / dist.get_world_size()
-            acc5 = dist.all_reduce_sum(acc5, "train_acc5") / dist.get_world_size()
+            loss = dist.all_reduce_sum(loss) / dist.get_world_size()
+            acc1 = dist.all_reduce_sum(acc1) / dist.get_world_size()
+            acc5 = dist.all_reduce_sum(acc5) / dist.get_world_size()
         return loss, acc1, acc5
 
     @jit.trace(symbolic=True)
@@ -165,9 +165,9 @@ def worker(rank, world_size, args):
         loss = F.cross_entropy_with_softmax(logits, label, label_smooth=0.1)
         acc1, acc5 = F.accuracy(logits, label, (1, 5))
         if dist.is_distributed():  # all_reduce_mean
-            loss = dist.all_reduce_sum(loss, "valid_loss") / dist.get_world_size()
-            acc1 = dist.all_reduce_sum(acc1, "valid_acc1") / dist.get_world_size()
-            acc5 = dist.all_reduce_sum(acc5, "valid_acc5") / dist.get_world_size()
+            loss = dist.all_reduce_sum(loss) / dist.get_world_size()
+            acc1 = dist.all_reduce_sum(acc1) / dist.get_world_size()
+            acc5 = dist.all_reduce_sum(acc5) / dist.get_world_size()
         return loss, acc1, acc5
 
     # Build train and valid datasets
@@ -189,6 +189,8 @@ def worker(rank, world_size, args):
         ),
         num_workers=args.workers,
     )
+
+    train_queue = iter(train_queue)
 
     valid_dataset = data.dataset.ImageNet(args.data, train=False)
     valid_sampler = data.SequentialSampler(
