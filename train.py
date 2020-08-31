@@ -48,6 +48,9 @@ import megengine.optimizer as optim
 
 import shufflenet_v2 as M
 
+from tensorboardX import SummaryWriter
+
+
 logger = mge.get_logger(__name__)
 
 
@@ -57,6 +60,7 @@ def main():
     parser.add_argument("-d", "--data", default=None, type=str)
     parser.add_argument("-s", "--save", default="./models", type=str)
     parser.add_argument("-m", "--model", default=None, type=str)
+    parser.add_argument('-o', '--output', type=str, required=True, help='set path for checkpoints \w tensorboard')
 
     parser.add_argument("-b", "--batch-size", default=128, type=int)
     parser.add_argument("--learning-rate", default=0.0625, type=float)
@@ -69,12 +73,16 @@ def main():
     parser.add_argument("--report-freq", default=50, type=int)
     args = parser.parse_args()
 
-    save_dir = os.path.join(args.save, args.arch)
+    world_size = mge.get_device_count("gpu") if args.ngpus is None else args.ngpus
+
+    save_dir = os.path.join(args.save, args.arch, "b{}".format(args.batch_size * world_size))
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     mge.set_log_file(os.path.join(save_dir, "log.txt"))
 
-    world_size = mge.get_device_count("gpu") if args.ngpus is None else args.ngpus
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+
 
     if world_size > 1:
         # scale learning rate by number of gpus
@@ -129,6 +137,10 @@ def worker(rank, world_size, args):
         )
 
     save_dir = os.path.join(args.save, args.arch)
+
+    if rank == 0:
+        prefixs=['train', 'valid']
+        writers = {prefix: SummaryWriter(os.path.join(args.output, prefix)) for prefix in prefixs}
 
     model = getattr(M, args.arch)()
     step_start = 0
@@ -252,24 +264,38 @@ def worker(rank, world_size, args):
                 time_iter - time_data,
                 time_iter * (args.steps - step) / 3600,
             )
+
+            writers['train'].add_scalar('loss', float(objs.__str__().split()[1]), global_step=step)
+            writers['train'].add_scalar('top1_err', 1-float(top1.__str__().split()[1])/100,  global_step=step)
+            writers['train'].add_scalar('top5_err', 1-float(top5.__str__().split()[1])/100, global_step=step)
+
             objs.reset()
             top1.reset()
             top5.reset()
             total_time.reset()
+
+
+
         if step % 10000 == 0 and rank == 0 and step != 0:
             logger.info("SAVING %06d", step)
             mge.save(
                 model.state_dict(),
                 os.path.join(save_dir, "checkpoint-{:06d}.pkl".format(step)),
             )
-        if step % 50000 == 0 and step != 0:
-            _, valid_acc, valid_acc5 = infer(valid_func, valid_queue, args)
-            logger.info("TEST Iter %06d: loss = %f,\tTop-1 err = %f,\tTop-5 err = %f", step, _, 1-valid_acc/100, 1-valid_acc5/100)
+        if step % 1 == 0 and step != 0:
+            loss, valid_acc, valid_acc5 = infer(valid_func, valid_queue, args)
+            logger.info("TEST Iter %06d: loss = %f,\tTop-1 err = %f,\tTop-5 err = %f", step, loss, 1-valid_acc/100, 1-valid_acc5/100)
+
+            if rank == 0:
+                writers['valid'].add_scalar('loss', loss, global_step=step)
+                writers['valid'].add_scalar('top1_err', 1-valid_acc/100, global_step=step)
+                writers['valid'].add_scalar('top5_err', 1-valid_acc5/100, global_step=step)
+
 
     mge.save(
         model.state_dict(), os.path.join(save_dir, "checkpoint-{:06d}.pkl".format(step))
     )
-    _, valid_acc, valid_acc5 = infer(valid_func, valid_queue, args)
+    loss, valid_acc, valid_acc5 = infer(valid_func, valid_queue, args)
     logger.info("TEST Iter %06d: loss=%f,\tTop-1 err = %f,\tTop-5 err = %f", step, _, 1-valid_acc/100, 1-valid_acc5/100)
 
 
