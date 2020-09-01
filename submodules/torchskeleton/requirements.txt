@@ -1,0 +1,4 @@
+treelib>=1.5.3
+tqdm>=4.28.0
+sklearn
+git+https://github.com/wbaek/theconf.git

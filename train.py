@@ -282,7 +282,7 @@ def worker(rank, world_size, args):
                 model.state_dict(),
                 os.path.join(save_dir, "checkpoint-{:06d}.pkl".format(step)),
             )
-        if step % 1 == 0 and step != 0:
+        if step % 10000 == 0 and step != 0:
             loss, valid_acc, valid_acc5 = infer(valid_func, valid_queue, args)
             logger.info("TEST Iter %06d: loss = %f,\tTop-1 err = %f,\tTop-5 err = %f", step, loss, 1-valid_acc/100, 1-valid_acc5/100)
 

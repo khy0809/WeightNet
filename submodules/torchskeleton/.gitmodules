@@ -1,0 +1,6 @@
+[submodule "libs/efficientnet"]
+	path = libs/efficientnet
+	url = https://github.com/wbaek/EfficientNet-PyTorch.git
+[submodule "libs/datasets"]
+	path = libs/datasets
+	url = https://github.kakaocorp.com/kakaobrain/datasets.git
